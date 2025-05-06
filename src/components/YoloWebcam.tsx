@@ -1,180 +1,150 @@
 import { useEffect, useRef } from "react";
 import * as ort from "onnxruntime-web";
 
-// Configure ONNX Runtime Web
-(ort as any).env.wasm.wasmPaths = {
-    'ort-wasm.wasm': '/onnxruntime-web/ort-wasm.wasm',
-    'ort-wasm-simd.wasm': '/onnxruntime-web/ort-wasm-simd.wasm',
-    'ort-wasm-threaded.wasm': '/onnxruntime-web/ort-wasm-threaded.wasm'
+/* ── WASM runtime paths ─────────────────────────────────────────────────── */
+; (ort as any).env.wasm.wasmPaths = {
+    "ort-wasm.wasm": "/onnxruntime-web/ort-wasm.wasm",
+    "ort-wasm-simd.wasm": "/onnxruntime-web/ort-wasm-simd.wasm",
+    "ort-wasm-threaded.wasm": "/onnxruntime-web/ort-wasm-threaded.wasm",
 };
 
 const MODEL_PATH = "/models/yolo11n.onnx";
+const INPUT_SIZE = 640;
 
-function drawBoxes(ctx: CanvasRenderingContext2D, output: ort.Tensor) {
-    const rows = output.dims.length === 3 ? output.dims[1] : output.dims[0];
-    const cols = output.dims.length === 3 ? output.dims[2] : output.dims[1];
+/* ── letter-box + build tensor ────────────────────────────────────────── */
+function letterbox(video: HTMLVideoElement) {
+    const canvas = document.createElement("canvas");
+    canvas.width = INPUT_SIZE;
+    canvas.height = INPUT_SIZE;
+    const ctx = canvas.getContext("2d")!;
+
+    const scale = Math.min(INPUT_SIZE / video.videoWidth, INPUT_SIZE / video.videoHeight);
+    const newW = Math.round(video.videoWidth * scale);
+    const newH = Math.round(video.videoHeight * scale);
+    const padX = (INPUT_SIZE - newW) / 2;
+    const padY = (INPUT_SIZE - newH) / 2;
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+    ctx.drawImage(
+        video,
+        0, 0, video.videoWidth, video.videoHeight,
+        padX, padY, newW, newH
+    );
+
+    const data = ctx.getImageData(0, 0, INPUT_SIZE, INPUT_SIZE).data;
+    const arr = new Float32Array(3 * INPUT_SIZE * INPUT_SIZE);
+    for (let i = 0; i < INPUT_SIZE * INPUT_SIZE; i++) {
+        arr[i] = data[i * 4] / 255;
+        arr[i + INPUT_SIZE * INPUT_SIZE] = data[i * 4 + 1] / 255;
+        arr[i + 2 * INPUT_SIZE * INPUT_SIZE] = data[i * 4 + 2] / 255;
+    }
+
+    return {
+        tensor: new ort.Tensor("float32", arr, [1, 3, INPUT_SIZE, INPUT_SIZE]),
+        scale,
+        padX,
+        padY,
+    };
+}
+
+function renderBoxes(
+    ctx: CanvasRenderingContext2D,
+    output: ort.Tensor,
+    scale: number,
+    padX: number,
+    padY: number
+) {
+    const [, nBoxes, dims] = output.dims;
     const data = output.data as Float32Array;
 
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.strokeStyle = "red";
+    ctx.fillStyle = "red";
+    ctx.lineWidth = 2;
+    ctx.font = "14px sans-serif";
 
-    for (let i = 0; i < rows; i++) {
-        const offset = i * cols;
-        const conf = data[offset + 4];
+    for (let i = 0; i < nBoxes; i++) {
+        const off = i * dims;
+        const x1_640 = data[off + 0];
+        const y1_640 = data[off + 1];
+        const x2_640 = data[off + 2];
+        const y2_640 = data[off + 3];
+        const conf = data[off + 4];
+
         if (conf < 0.5) continue;
 
-        const classScores = data.slice(offset + 5, offset + cols);
-        const classIndex = classScores.indexOf(Math.max(...classScores));
+        const x1 = (x1_640 - padX) / scale;
+        const y1 = (y1_640 - padY) / scale;
+        const x2 = (x2_640 - padX) / scale;
+        const y2 = (y2_640 - padY) / scale;
 
-        const x = data[offset + 0];
-        const y = data[offset + 1];
-        const w = data[offset + 2];
-        const h = data[offset + 3];
-
-        const x1 = x - w / 2;
-        const y1 = y - h / 2;
-
-        ctx.strokeStyle = "red";
-        ctx.lineWidth = 2;
+        const w = x2 - x1;
+        const h = y2 - y1;
         ctx.strokeRect(x1, y1, w, h);
-
-        ctx.fillStyle = "red";
-        ctx.font = "16px sans-serif";
-        ctx.fillText(`${conf.toFixed(2)} (class ${classIndex})`, x1, y1 - 4);
+        ctx.fillText(conf.toFixed(2), x1 + 2, y1 - 4);
     }
 }
 
 
-function preprocess(imageData: ImageData): ort.Tensor {
-    // Resize to 640x640
-    const ctx = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
-    ctx.canvas.width = 640;
-    ctx.canvas.height = 640;
-    ctx.putImageData(imageData, 0, 0);
-    const scaled = ctx.getImageData(0, 0, 640, 640);
-
-    // Normalize [0,255] → [0,1], reorder to CHW
-    const input = new Float32Array(1 * 3 * 640 * 640);
-    for (let i = 0; i < 640 * 640; i++) {
-        input[i] = scaled.data[i * 4 + 0] / 255; // R
-        input[i + 640 * 640] = scaled.data[i * 4 + 1] / 255; // G
-        input[i + 2 * 640 * 640] = scaled.data[i * 4 + 2] / 255; // B
-    }
-
-    return new ort.Tensor("float32", input, [1, 3, 640, 640]);
-}
-
+/* ── React component ───────────────────────────────────────────────────── */
 const YoloWebcam: React.FC = () => {
-    const videoRef = useRef<HTMLVideoElement>(null);
-    const canvasRef = useRef<HTMLCanvasElement>(null);
-    const sessionRef = useRef<ort.InferenceSession | null>(null);
-    const animationFrameRef = useRef<number | undefined>(undefined);
+    const vidRef = useRef<HTMLVideoElement>(null);
+    const canRef = useRef<HTMLCanvasElement>(null);
+    const sessRef = useRef<ort.InferenceSession | null>(null);
+    const rafRef = useRef<number | undefined>(undefined);
 
     useEffect(() => {
-        const setup = async () => {
-            try {
-                const session = await ort.InferenceSession.create(MODEL_PATH, {
-                    executionProviders: ["wasm"],
-                });
-                sessionRef.current = session;
+        (async () => {
+            sessRef.current = await ort.InferenceSession.create(MODEL_PATH, {
+                executionProviders: ["wasm"],
+            });
 
-                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                if (videoRef.current) {
-                    videoRef.current.srcObject = stream;
-                    // Wait for video to be ready
-                    await new Promise<void>((resolve) => {
-                        if (!videoRef.current) return;
-                        videoRef.current.onloadedmetadata = () => {
-                            if (!videoRef.current) return;
-                            videoRef.current.play();
-                            resolve();
-                        };
-                    });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            vidRef.current!.srcObject = stream;
+            await new Promise<void>(r => {
+                vidRef.current!.onloadedmetadata = () => { vidRef.current!.play(); r(); };
+            });
+
+            const loop = async () => {
+                const video = vidRef.current!;
+                const canvas = canRef.current!;
+                const ctx = canvas.getContext("2d")!;
+
+                if (canvas.width !== video.videoWidth) {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
                 }
 
-                detect();
-            } catch (err) {
-                console.error("Setup failed:", err);
-            }
-        };
+                const { tensor, scale, padX, padY } = letterbox(video);
+                const feeds: Record<string, ort.Tensor> = {};
+                feeds[sessRef.current!.inputNames[0]] = tensor;
+                const res = await sessRef.current!.run(feeds);
+                const output = res[sessRef.current!.outputNames[0]];
 
-        const detect = async () => {
-            if (!videoRef.current || !canvasRef.current || !sessionRef.current) {
-                animationFrameRef.current = requestAnimationFrame(detect);
-                return;
-            }
+                ctx.drawImage(video, 0, 0);
 
-            const video = videoRef.current;
-            const canvas = canvasRef.current;
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
-            if (!ctx) return;
+                renderBoxes(ctx, output, scale, padX, padY);
 
-            // Ensure video is playing and has valid dimensions
-            if (video.readyState !== video.HAVE_ENOUGH_DATA ||
-                video.videoWidth === 0 ||
-                video.videoHeight === 0) {
-                animationFrameRef.current = requestAnimationFrame(detect);
-                return;
-            }
+                rafRef.current = requestAnimationFrame(loop);
+            };
 
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const inputTensor = preprocess(imageData);
-
-            const feeds: Record<string, ort.Tensor> = {};
-            feeds[sessionRef.current.inputNames[0]] = inputTensor;
-
-            const results = await sessionRef.current.run(feeds);
-            const output = results[sessionRef.current.outputNames[0]];
-
-            drawBoxes(ctx, output);
-            animationFrameRef.current = requestAnimationFrame(detect);
-        };
-
-        setup();
+            loop();
+        })();
 
         return () => {
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            if (videoRef.current?.srcObject) {
-                const stream = videoRef.current.srcObject as MediaStream;
-                stream.getTracks().forEach(track => track.stop());
+            if (rafRef.current) cancelAnimationFrame(rafRef.current);
+            if (vidRef.current?.srcObject) {
+                (vidRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
             }
         };
     }, []);
 
     return (
-        <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '100%',
-            maxWidth: '960px',
-            margin: '0 auto'
-        }}>
-            <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                style={{
-                    width: '100%',
-                    height: 'auto',
-                    display: 'none'
-                }}
-            />
+        <div style={{ maxWidth: 960, margin: "0 auto" }}>
+            <video ref={vidRef} style={{ display: "none" }} muted playsInline />
             <canvas
-                ref={canvasRef}
-                style={{
-                    width: '100%',
-                    height: 'auto',
-                    backgroundColor: '#000',
-                    borderRadius: '8px'
-                }}
+                ref={canRef}
+                style={{ width: "100%", height: "auto", borderRadius: 8, background: "#000" }}
             />
         </div>
     );

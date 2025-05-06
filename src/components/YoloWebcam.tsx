@@ -1,7 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as ort from "onnxruntime-web";
 
-/* ── WASM runtime paths ─────────────────────────────────────────────────── */
 ; (ort as any).env.wasm.wasmPaths = {
     "ort-wasm.wasm": "/onnxruntime-web/ort-wasm.wasm",
     "ort-wasm-simd.wasm": "/onnxruntime-web/ort-wasm-simd.wasm",
@@ -11,7 +10,6 @@ import * as ort from "onnxruntime-web";
 const MODEL_PATH = "/models/yolo11n.onnx";
 const INPUT_SIZE = 640;
 
-/* ── letter-box + build tensor ────────────────────────────────────────── */
 function letterbox(video: HTMLVideoElement) {
     const canvas = document.createElement("canvas");
     canvas.width = INPUT_SIZE;
@@ -53,7 +51,8 @@ function renderBoxes(
     output: ort.Tensor,
     scale: number,
     padX: number,
-    padY: number
+    padY: number,
+    classNames: string[]
 ) {
     const [, nBoxes, dims] = output.dims;
     const data = output.data as Float32Array;
@@ -81,19 +80,31 @@ function renderBoxes(
         const w = x2 - x1;
         const h = y2 - y1;
         ctx.strokeRect(x1, y1, w, h);
-        ctx.fillText(conf.toFixed(2), x1 + 2, y1 - 4);
+
+        const clsId = Math.round(data[off + 5]);
+        const label = classNames[clsId] ?? `class ${clsId}`;
+        ctx.fillText(`${label} ${conf.toFixed(2)}`, x1 + 2, y1 - 4);
     }
 }
 
 
-/* ── React component ───────────────────────────────────────────────────── */
 const YoloWebcam: React.FC = () => {
     const vidRef = useRef<HTMLVideoElement>(null);
     const canRef = useRef<HTMLCanvasElement>(null);
     const sessRef = useRef<ort.InferenceSession | null>(null);
     const rafRef = useRef<number | undefined>(undefined);
+    const [classNames, setClassNames] = useState<string[]>([]);
 
     useEffect(() => {
+        fetch("/classes/coco80.names.json")
+            .then(res => res.json())
+            .then(setClassNames)
+            .catch(err => console.error("Failed to load class names:", err));
+    }, []);
+
+    useEffect(() => {
+        if (classNames.length === 0) return;
+
         (async () => {
             sessRef.current = await ort.InferenceSession.create(MODEL_PATH, {
                 executionProviders: ["wasm"],
@@ -109,6 +120,7 @@ const YoloWebcam: React.FC = () => {
                 const video = vidRef.current!;
                 const canvas = canRef.current!;
                 const ctx = canvas.getContext("2d")!;
+                if (!ctx) return;
 
                 if (canvas.width !== video.videoWidth) {
                     canvas.width = video.videoWidth;
@@ -122,29 +134,35 @@ const YoloWebcam: React.FC = () => {
                 const output = res[sessRef.current!.outputNames[0]];
 
                 ctx.drawImage(video, 0, 0);
-
-                renderBoxes(ctx, output, scale, padX, padY);
+                renderBoxes(ctx, output, scale, padX, padY, classNames);
 
                 rafRef.current = requestAnimationFrame(loop);
             };
 
             loop();
         })();
+    }, [classNames]);
 
-        return () => {
-            if (rafRef.current) cancelAnimationFrame(rafRef.current);
-            if (vidRef.current?.srcObject) {
-                (vidRef.current.srcObject as MediaStream).getTracks().forEach(t => t.stop());
-            }
-        };
-    }, []);
 
     return (
-        <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        <div style={{
+            maxWidth: "90vw",
+            margin: "2rem auto",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            height: "80vh"
+        }}>
             <video ref={vidRef} style={{ display: "none" }} muted playsInline />
             <canvas
                 ref={canRef}
-                style={{ width: "100%", height: "auto", borderRadius: 8, background: "#000" }}
+                style={{
+                    width: "auto",
+                    height: "100%",
+                    maxWidth: "100%",
+                    borderRadius: 8,
+                    background: "#000"
+                }}
             />
         </div>
     );

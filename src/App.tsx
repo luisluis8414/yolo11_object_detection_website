@@ -41,7 +41,7 @@ function App() {
         boxSizing: "border-box",
       }}
     >
-      <h1 style={{ textAlign: "center", marginBottom: "1rem" }}>
+      <h1 style={{ textAlign: "center" }}>
         YOLOv11n ONNX Inference
       </h1>
       <ModelSelector

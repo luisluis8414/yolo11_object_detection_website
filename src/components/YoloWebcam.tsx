@@ -100,6 +100,7 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
     y: number;
   } | null>(null);
   const [classNames, setClassNames] = useState<string[]>([]);
+  const [inferenceTime, setInferenceTime] = useState<number>(0);
 
   useEffect(() => {
     fetch(modelConfig.classesPath)
@@ -167,6 +168,7 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
       };
 
       const detect = async () => {
+        const startTime = performance.now();
         const { tensor, scale, padX, padY } = letterbox(
           vidRef.current!,
           modelConfig.imgsz
@@ -174,6 +176,8 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         const res = await sessRef.current!.run({
           [sessRef.current!.inputNames[0]]: tensor,
         });
+        const endTime = performance.now();
+        setInferenceTime(endTime - startTime);
         boxesRef.current = {
           out: res[sessRef.current!.outputNames[0]],
           s: scale,
@@ -228,6 +232,14 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
           pointerEvents: "none",
         }}
       />
+      <div style={{
+        textAlign: "center",
+        padding: "0.5rem",
+        fontSize: "0.9rem",
+        color: "#666",
+      }}>
+        Inference Time: {inferenceTime.toFixed(1)} ms
+      </div>
     </div>
   );
 };

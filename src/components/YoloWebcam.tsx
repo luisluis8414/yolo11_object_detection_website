@@ -101,6 +101,36 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   } | null>(null);
   const [classNames, setClassNames] = useState<string[]>([]);
   const [inferenceTime, setInferenceTime] = useState<number>(0);
+  const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string>("");
+  const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    async function getVideoDevices() {
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true })
+          .then(stream => {
+            stream.getTracks().forEach(track => track.stop());
+          });
+
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevs = devices.filter(device => device.kind === 'videoinput');
+        setVideoDevices(videoDevs);
+        if (videoDevs.length > 0 && !currentDeviceId) {
+          setCurrentDeviceId(videoDevs[0].deviceId);
+        }
+      } catch (error) {
+        console.error('Error getting video devices:', error);
+      }
+    }
+
+    navigator.mediaDevices.addEventListener('devicechange', getVideoDevices);
+    getVideoDevices();
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', getVideoDevices);
+    };
+  }, []);
 
   useEffect(() => {
     fetch(modelConfig.classesPath)
@@ -110,7 +140,7 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   }, [modelConfig.classesPath]);
 
   useEffect(() => {
-    if (!classNames.length) return;
+    if (!classNames.length || !currentDeviceId) return;
     let rafID: number;
     let timerID: ReturnType<typeof setTimeout>;
 
@@ -133,9 +163,19 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         }
       }
 
+      // Stop any existing stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1200 }, height: { ideal: 680 } },
+        video: {
+          deviceId: { exact: currentDeviceId },
+          width: { ideal: 1000 },
+          height: { ideal: 580 }
+        },
       });
+      streamRef.current = stream;
       vidRef.current!.srcObject = stream;
 
       await new Promise<void>((r) => {
@@ -201,14 +241,12 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
     return () => {
       cancelAnimationFrame(rafID);
       clearTimeout(timerID);
-      if (vidRef.current?.srcObject) {
-        (vidRef.current.srcObject as MediaStream)
-          .getTracks()
-          .forEach((t) => t.stop());
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
       }
       sessRef.current = null;
     };
-  }, [classNames, modelConfig.modelPath, modelConfig.imgsz]);
+  }, [classNames, modelConfig.modelPath, modelConfig.imgsz, currentDeviceId]);
 
   return (
     <div
@@ -218,6 +256,33 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         margin: "0 auto",
       }}
     >
+      <div style={{
+        display: 'flex',
+        justifyContent: 'center',
+        marginBottom: '1rem',
+      }}>
+        {videoDevices.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <label style={{ marginRight: '0.5rem' }}>Camera: </label>
+            <select
+              value={currentDeviceId}
+              onChange={(e) => setCurrentDeviceId(e.target.value)}
+              style={{
+                padding: '0.5rem',
+                borderRadius: '4px',
+                border: '1px solid #ccc',
+                fontSize: '1rem',
+              }}
+            >
+              {videoDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label || `Camera ${videoDevices.indexOf(device) + 1}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
       <video
         ref={vidRef}
         muted

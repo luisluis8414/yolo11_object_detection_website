@@ -9,10 +9,10 @@ env.webgl.packMax = true;
 const DETECT_INTERVAL_MS = 40;
 
 function letterbox(video: HTMLVideoElement, inputSize: number) {
-  const canvas = document.createElement("canvas");
-  canvas.width = inputSize;
-  canvas.height = inputSize;
-  const ctx = canvas.getContext("2d")!;
+  const offscreen = document.createElement("canvas");
+  offscreen.width = inputSize;
+  offscreen.height = inputSize;
+  const ctx = offscreen.getContext("2d")!;
   const scale = Math.min(
     inputSize / video.videoWidth,
     inputSize / video.videoHeight
@@ -57,23 +57,27 @@ function renderBoxes(
   padY: number,
   classNames: string[]
 ) {
-  const [, nBoxes, dims] = output.dims;
+  const [, n, d] = output.dims;
   const data = output.data as Float32Array;
   ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   ctx.strokeStyle = "red";
   ctx.fillStyle = "red";
   ctx.lineWidth = 2;
   ctx.font = "14px sans-serif";
-  for (let i = 0; i < nBoxes; i++) {
-    const off = i * dims;
+
+  for (let i = 0; i < n; i++) {
+    const off = i * d;
     const conf = data[off + 4];
     if (conf < 0.5) continue;
+
+    // map back to original video px
     const x1 = (data[off] - padX) / scale;
     const y1 = (data[off + 1] - padY) / scale;
     const x2 = (data[off + 2] - padX) / scale;
     const y2 = (data[off + 3] - padY) / scale;
     const w = x2 - x1;
     const h = y2 - y1;
+
     ctx.strokeRect(x1, y1, w, h);
     const clsId = Math.round(data[off + 5]);
     const label = classNames[clsId] ?? `cls ${clsId}`;
@@ -88,6 +92,7 @@ interface YoloWebcamProps {
 const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   const vidRef = useRef<HTMLVideoElement>(null);
   const canRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const sessRef = useRef<InferenceSession | null>(null);
   const boxesRef = useRef<{
     out: Tensor;
@@ -97,6 +102,7 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   } | null>(null);
   const [classNames, setClassNames] = useState<string[]>([]);
 
+  // load class names
   useEffect(() => {
     fetch(modelConfig.classesPath)
       .then((r) => r.json())
@@ -104,12 +110,14 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
       .catch(console.error);
   }, [modelConfig.classesPath]);
 
+  // main setup
   useEffect(() => {
     if (!classNames.length) return;
-    let drawRAF: number;
-    let detectTimer: ReturnType<typeof setTimeout>;
+    let rafID: number;
+    let timerID: ReturnType<typeof setTimeout>;
 
     (async () => {
+      // 1) init ONNX session
       try {
         sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
           executionProviders: ["webgl"],
@@ -118,44 +126,64 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         try {
           sessRef.current = await InferenceSession.create(
             modelConfig.modelPath,
-            {
-              executionProviders: ["webgpu"],
-            }
+            { executionProviders: ["webgpu"] }
           );
         } catch {
           sessRef.current = await InferenceSession.create(
             modelConfig.modelPath,
-            {
-              executionProviders: ["wasm"],
-            }
+            { executionProviders: ["wasm"] }
           );
         }
       }
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      // 2) start camera
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1200 }, height: { ideal: 680 } },
+      });
       vidRef.current!.srcObject = stream;
+
+      // 3) wait for metadata, then clamp container width
       await new Promise<void>((r) => {
         vidRef.current!.onloadedmetadata = () => {
-          vidRef.current!.play();
+          const v = vidRef.current!;
+          const c = containerRef.current!;
+          // use up to 80vw but never exceed native feed width
+          c.style.width = "80vw";
+          c.style.maxWidth = `${v.videoWidth}px`;
+          v.play();
           r();
         };
       });
 
+      // 4) draw loop
       const draw = () => {
-        const video = vidRef.current!;
-        const canvas = canRef.current!;
-        const ctx = canvas.getContext("2d")!;
-        if (canvas.width !== video.videoWidth) {
-          canvas.width = video.videoWidth;
-          canvas.height = video.videoHeight;
+        const v = vidRef.current!;
+        const c = canRef.current!;
+        const ctx = c.getContext("2d")!;
+
+        // keep canvas internal size = video native resolution
+        if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
+          c.width = v.videoWidth;
+          c.height = v.videoHeight;
+          // CSS will scale via width:100% height:auto
         }
-        ctx.drawImage(video, 0, 0);
+
+        // paint current frame
+        ctx.drawImage(v, 0, 0);
+
+        // overlay boxes
         const b = boxesRef.current;
         if (b) renderBoxes(ctx, b.out, b.s, b.x, b.y, classNames);
-        drawRAF = requestAnimationFrame(draw);
+
+        rafID = requestAnimationFrame(draw);
       };
 
+      // 5) detection loop
       const detect = async () => {
-        const { tensor, scale, padX, padY } = letterbox(vidRef.current!, modelConfig.imgsz);
+        const { tensor, scale, padX, padY } = letterbox(
+          vidRef.current!,
+          modelConfig.imgsz
+        );
         const res = await sessRef.current!.run({
           [sessRef.current!.inputNames[0]]: tensor,
         });
@@ -165,33 +193,31 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
           x: padX,
           y: padY,
         };
-        detectTimer = setTimeout(detect, DETECT_INTERVAL_MS);
+        timerID = setTimeout(detect, DETECT_INTERVAL_MS);
       };
 
-      drawRAF = requestAnimationFrame(draw);
+      draw();
       detect();
     })();
 
+    // cleanup
     return () => {
-      cancelAnimationFrame(drawRAF);
-      clearTimeout(detectTimer);
+      cancelAnimationFrame(rafID);
+      clearTimeout(timerID);
       if (vidRef.current?.srcObject) {
         (vidRef.current.srcObject as MediaStream)
           .getTracks()
           .forEach((t) => t.stop());
       }
-      if (sessRef.current) {
-        sessRef.current = null;
-      }
+      sessRef.current = null;
     };
   }, [classNames, modelConfig.modelPath, modelConfig.imgsz]);
 
   return (
     <div
+      ref={containerRef}
       style={{
         position: "relative",
-        width: "80vw",
-        maxHeight: "80vh",
         margin: "0 auto",
       }}
     >
@@ -202,8 +228,6 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         style={{
           width: "100%",
           height: "auto",
-          maxHeight: "80vh",
-          objectFit: "contain",
           display: "block",
         }}
       />
@@ -215,7 +239,6 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
           left: 0,
           width: "100%",
           height: "auto",
-          maxHeight: "80vh",
           pointerEvents: "none",
         }}
       />

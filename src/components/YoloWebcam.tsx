@@ -173,9 +173,16 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
           vidRef.current!,
           modelConfig.imgsz
         );
-        const res = await sessRef.current!.run({
-          [sessRef.current!.inputNames[0]]: tensor,
-        });
+        let res;
+        try {
+          res = await sessRef.current!.run({ [sessRef.current!.inputNames[0]]: tensor });
+        } catch (e) {
+          console.warn("WebGPU inference failed, falling back to Wasm:", e);
+          sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
+            executionProviders: ["wasm"],
+          });
+          res = await sessRef.current!.run({ [sessRef.current!.inputNames[0]]: tensor });
+        }
         const endTime = performance.now();
         setInferenceTime(endTime - startTime);
         boxesRef.current = {

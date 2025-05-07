@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://object-detection-deep-learning-project.vercel.app/sitemap.xml

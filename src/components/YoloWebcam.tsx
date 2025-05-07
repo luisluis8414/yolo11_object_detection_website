@@ -70,7 +70,6 @@ function renderBoxes(
     const conf = data[off + 4];
     if (conf < 0.5) continue;
 
-    // map back to original video px
     const x1 = (data[off] - padX) / scale;
     const y1 = (data[off + 1] - padY) / scale;
     const x2 = (data[off + 2] - padX) / scale;
@@ -102,7 +101,6 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   } | null>(null);
   const [classNames, setClassNames] = useState<string[]>([]);
 
-  // load class names
   useEffect(() => {
     fetch(modelConfig.classesPath)
       .then((r) => r.json())
@@ -110,14 +108,12 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
       .catch(console.error);
   }, [modelConfig.classesPath]);
 
-  // main setup
   useEffect(() => {
     if (!classNames.length) return;
     let rafID: number;
     let timerID: ReturnType<typeof setTimeout>;
 
     (async () => {
-      // 1) init ONNX session
       try {
         sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
           executionProviders: ["webgl"],
@@ -136,18 +132,15 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         }
       }
 
-      // 2) start camera
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 1200 }, height: { ideal: 680 } },
       });
       vidRef.current!.srcObject = stream;
 
-      // 3) wait for metadata, then clamp container width
       await new Promise<void>((r) => {
         vidRef.current!.onloadedmetadata = () => {
           const v = vidRef.current!;
           const c = containerRef.current!;
-          // use up to 80vw but never exceed native feed width
           c.style.width = "80vw";
           c.style.maxWidth = `${v.videoWidth}px`;
           v.play();
@@ -155,30 +148,24 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
         };
       });
 
-      // 4) draw loop
       const draw = () => {
         const v = vidRef.current!;
         const c = canRef.current!;
         const ctx = c.getContext("2d")!;
 
-        // keep canvas internal size = video native resolution
         if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
           c.width = v.videoWidth;
           c.height = v.videoHeight;
-          // CSS will scale via width:100% height:auto
         }
 
-        // paint current frame
         ctx.drawImage(v, 0, 0);
 
-        // overlay boxes
         const b = boxesRef.current;
         if (b) renderBoxes(ctx, b.out, b.s, b.x, b.y, classNames);
 
         rafID = requestAnimationFrame(draw);
       };
 
-      // 5) detection loop
       const detect = async () => {
         const { tensor, scale, padX, padY } = letterbox(
           vidRef.current!,
@@ -200,7 +187,6 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
       detect();
     })();
 
-    // cleanup
     return () => {
       cancelAnimationFrame(rafID);
       clearTimeout(timerID);

@@ -133,120 +133,160 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
   }, []);
 
   useEffect(() => {
-    fetch(modelConfig.classesPath)
-      .then((r) => r.json())
-      .then(setClassNames)
-      .catch(console.error);
-  }, [modelConfig.classesPath]);
-
-  useEffect(() => {
-    if (!classNames.length || !currentDeviceId) return;
     let rafID: number;
     let timerID: ReturnType<typeof setTimeout>;
+    let isActive = true;
 
-    (async () => {
+    async function initializeModel() {
       try {
-        sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
-          executionProviders: ["webgl"],
-        });
-      } catch {
-        try {
-          sessRef.current = await InferenceSession.create(
-            modelConfig.modelPath,
-            { executionProviders: ["webgpu"] }
-          );
-        } catch {
-          sessRef.current = await InferenceSession.create(
-            modelConfig.modelPath,
-            { executionProviders: ["wasm"] }
-          );
+        // Clean up previous session and stream
+        if (sessRef.current) {
+          sessRef.current = null;
         }
-      }
-
-      // Stop any existing stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: currentDeviceId },
-          width: { ideal: 1000 },
-          height: { ideal: 580 }
-        },
-      });
-      streamRef.current = stream;
-      vidRef.current!.srcObject = stream;
-
-      await new Promise<void>((r) => {
-        vidRef.current!.onloadedmetadata = () => {
-          const v = vidRef.current!;
-          const c = containerRef.current!;
-          c.style.width = "80vw";
-          c.style.maxWidth = `${v.videoWidth}px`;
-          v.play();
-          r();
-        };
-      });
-
-      const draw = () => {
-        const v = vidRef.current!;
-        const c = canRef.current!;
-        const ctx = c.getContext("2d")!;
-
-        if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
-          c.width = v.videoWidth;
-          c.height = v.videoHeight;
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+        }
+        if (boxesRef.current) {
+          boxesRef.current = null;
         }
 
-        ctx.drawImage(v, 0, 0);
+        // Load class names first
+        const classNamesResponse = await fetch(modelConfig.classesPath);
+        const newClassNames = await classNamesResponse.json();
+        if (!isActive) return;
+        setClassNames(newClassNames);
 
-        const b = boxesRef.current;
-        if (b) renderBoxes(ctx, b.out, b.s, b.x, b.y, classNames);
-
-        rafID = requestAnimationFrame(draw);
-      };
-
-      const detect = async () => {
-        const startTime = performance.now();
-        const { tensor, scale, padX, padY } = letterbox(
-          vidRef.current!,
-          modelConfig.imgsz
-        );
-        let res;
+        // Then load the model
         try {
-          res = await sessRef.current!.run({ [sessRef.current!.inputNames[0]]: tensor });
-        } catch (e) {
-          console.warn("WebGPU inference failed, falling back to Wasm:", e);
           sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
-            executionProviders: ["wasm"],
+            executionProviders: ["webgl"],
           });
-          res = await sessRef.current!.run({ [sessRef.current!.inputNames[0]]: tensor });
+        } catch {
+          try {
+            sessRef.current = await InferenceSession.create(
+              modelConfig.modelPath,
+              { executionProviders: ["webgpu"] }
+            );
+          } catch {
+            sessRef.current = await InferenceSession.create(
+              modelConfig.modelPath,
+              { executionProviders: ["wasm"] }
+            );
+          }
         }
-        const endTime = performance.now();
-        setInferenceTime(endTime - startTime);
-        boxesRef.current = {
-          out: res[sessRef.current!.outputNames[0]],
-          s: scale,
-          x: padX,
-          y: padY,
-        };
-        timerID = setTimeout(detect, DETECT_INTERVAL_MS);
-      };
 
-      draw();
-      detect();
-    })();
+        if (!isActive || !currentDeviceId) return;
+
+        // Initialize video stream
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: { exact: currentDeviceId },
+            width: { ideal: 1000 },
+            height: { ideal: 580 }
+          },
+        });
+
+        if (!isActive) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        if (vidRef.current) {
+          vidRef.current.srcObject = stream;
+        }
+
+        await new Promise<void>((r) => {
+          if (!vidRef.current) return;
+          vidRef.current.onloadedmetadata = () => {
+            const v = vidRef.current!;
+            const c = containerRef.current!;
+            c.style.width = "80vw";
+            c.style.maxWidth = `${v.videoWidth}px`;
+            v.play();
+            r();
+          };
+        });
+
+        if (!isActive) return;
+
+        const draw = () => {
+          if (!isActive) return;
+          const v = vidRef.current!;
+          const c = canRef.current!;
+          const ctx = c.getContext("2d")!;
+
+          if (c.width !== v.videoWidth || c.height !== v.videoHeight) {
+            c.width = v.videoWidth;
+            c.height = v.videoHeight;
+          }
+
+          ctx.drawImage(v, 0, 0);
+
+          const b = boxesRef.current;
+          if (b) renderBoxes(ctx, b.out, b.s, b.x, b.y, newClassNames);
+
+          rafID = requestAnimationFrame(draw);
+        };
+
+        const detect = async () => {
+          if (!isActive || !sessRef.current || !vidRef.current) return;
+
+          const startTime = performance.now();
+          const { tensor, scale, padX, padY } = letterbox(
+            vidRef.current,
+            modelConfig.imgsz
+          );
+
+          let res;
+          try {
+            res = await sessRef.current.run({ [sessRef.current.inputNames[0]]: tensor });
+          } catch (e) {
+            console.warn("WebGPU inference failed, falling back to Wasm:", e);
+            if (!isActive) return;
+            sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
+              executionProviders: ["wasm"],
+            });
+            res = await sessRef.current.run({ [sessRef.current.inputNames[0]]: tensor });
+          }
+
+          if (!isActive) return;
+
+          const endTime = performance.now();
+          setInferenceTime(endTime - startTime);
+          boxesRef.current = {
+            out: res[sessRef.current.outputNames[0]],
+            s: scale,
+            x: padX,
+            y: padY,
+          };
+          timerID = setTimeout(detect, DETECT_INTERVAL_MS);
+        };
+
+        draw();
+        detect();
+      } catch (error) {
+        console.error('Error initializing model:', error);
+      }
+    }
+
+    initializeModel();
 
     return () => {
+      isActive = false;
       cancelAnimationFrame(rafID);
       clearTimeout(timerID);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
-      sessRef.current = null;
+      if (sessRef.current) {
+        sessRef.current = null;
+      }
+      if (boxesRef.current) {
+        boxesRef.current = null;
+      }
     };
-  }, [classNames, modelConfig.modelPath, modelConfig.imgsz, currentDeviceId]);
+  }, [modelConfig, currentDeviceId]);
 
   return (
     <div

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { InferenceSession, Tensor } from "onnxruntime-web";
 import { env } from "onnxruntime-web/webgpu";
 import type { ModelConfig } from "./ModelSelector";
+import type { CameraDevice } from "./CameraSelector";
 
 env.webgl.pack = true;
 env.webgl.packMax = true;
@@ -86,9 +87,10 @@ function renderBoxes(
 
 interface YoloWebcamProps {
   modelConfig: ModelConfig;
+  selectedCamera: CameraDevice | null;
 }
 
-const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
+const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig, selectedCamera }) => {
   const vidRef = useRef<HTMLVideoElement>(null);
   const canRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -99,8 +101,9 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
     x: number;
     y: number;
   } | null>(null);
-  const [classNames, setClassNames] = useState<string[]>([]);
+  const [__, setClassNames] = useState<string[]>([]);
   const [inferenceTime, setInferenceTime] = useState<number>(0);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     let rafID: number;
@@ -109,18 +112,15 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
 
     (async () => {
       try {
-        // First load class names
         const classNamesResponse = await fetch(modelConfig.classesPath);
         const newClassNames = await classNamesResponse.json();
         if (!isActive) return;
         setClassNames(newClassNames);
 
-        // Clean up previous session if it exists
         if (sessRef.current) {
           sessRef.current = null;
         }
 
-        // Create new session
         try {
           sessRef.current = await InferenceSession.create(modelConfig.modelPath, {
             executionProviders: ["webgl"],
@@ -141,15 +141,25 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
 
         if (!isActive) return;
 
-        // Setup video stream if not already set up
-        if (!vidRef.current?.srcObject) {
+        if (selectedCamera) {
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => track.stop());
+          }
+
           const stream = await navigator.mediaDevices.getUserMedia({
-            video: { width: { ideal: 1200 }, height: { ideal: 680 } },
+            video: {
+              deviceId: { exact: selectedCamera.deviceId },
+              width: { ideal: 1080 },
+              height: { ideal: 612 }
+            }
           });
+
           if (!isActive) {
             stream.getTracks().forEach(t => t.stop());
             return;
           }
+
+          streamRef.current = stream;
           vidRef.current!.srcObject = stream;
 
           await new Promise<void>((r) => {
@@ -215,8 +225,10 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
           timerID = setTimeout(detect, DETECT_INTERVAL_MS);
         };
 
-        draw();
-        detect();
+        if (vidRef.current?.srcObject) {
+          draw();
+          detect();
+        }
       } catch (error) {
         console.error("Error in setup:", error);
       }
@@ -230,8 +242,12 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig }) => {
       if (sessRef.current) {
         sessRef.current = null;
       }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
     };
-  }, [modelConfig]); // Only depend on modelConfig
+  }, [modelConfig, selectedCamera]);
 
   return (
     <div

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import YoloWebcam from "./components/YoloWebcam";
 import ModelSelector, { type ModelConfig } from "./components/ModelSelector";
+import CameraSelector, { type CameraDevice } from "./components/CameraSelector";
 
 const AVAILABLE_MODELS: ModelConfig[] = [
   {
@@ -27,6 +28,7 @@ function App() {
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(
     AVAILABLE_MODELS[0]
   );
+  const [selectedCamera, setSelectedCamera] = useState<CameraDevice | null>(null);
 
   return (
     <div
@@ -44,12 +46,21 @@ function App() {
       <h1 style={{ textAlign: "center" }}>
         YOLOv11n ONNX Inference
       </h1>
-      <ModelSelector
-        models={AVAILABLE_MODELS}
-        selectedModel={selectedModel}
-        onModelSelect={setSelectedModel}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <ModelSelector
+          models={AVAILABLE_MODELS}
+          selectedModel={selectedModel}
+          onModelSelect={setSelectedModel}
+        />
+        <CameraSelector
+          selectedDevice={selectedCamera}
+          onDeviceSelect={setSelectedCamera}
+        />
+      </div>
+      <YoloWebcam
+        modelConfig={selectedModel}
+        selectedCamera={selectedCamera}
       />
-      <YoloWebcam modelConfig={selectedModel} />
     </div>
   );
 }

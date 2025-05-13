@@ -11,17 +11,21 @@ const DETECT_INTERVAL_MS = 40;
 
 function letterbox(video: HTMLVideoElement, inputSize: number) {
   const offscreen = document.createElement("canvas");
+
   offscreen.width = inputSize;
   offscreen.height = inputSize;
+
   const ctx = offscreen.getContext("2d")!;
   const scale = Math.min(
     inputSize / video.videoWidth,
     inputSize / video.videoHeight
   );
+
   const newW = Math.round(video.videoWidth * scale);
   const newH = Math.round(video.videoHeight * scale);
   const padX = (inputSize - newW) / 2;
   const padY = (inputSize - newH) / 2;
+
   ctx.fillStyle = "black";
   ctx.fillRect(0, 0, inputSize, inputSize);
   ctx.drawImage(
@@ -35,13 +39,16 @@ function letterbox(video: HTMLVideoElement, inputSize: number) {
     newW,
     newH
   );
+
   const img = ctx.getImageData(0, 0, inputSize, inputSize).data;
   const arr = new Float32Array(3 * inputSize * inputSize);
+
   for (let i = 0; i < inputSize * inputSize; i++) {
     arr[i] = img[i * 4] / 255;
     arr[i + inputSize * inputSize] = img[i * 4 + 1] / 255;
     arr[i + 2 * inputSize * inputSize] = img[i * 4 + 2] / 255;
   }
+  
   return {
     tensor: new Tensor("float32", arr, [1, 3, inputSize, inputSize]),
     scale,
@@ -101,6 +108,7 @@ const YoloWebcam: React.FC<YoloWebcamProps> = ({ modelConfig, selectedCamera }) 
     x: number;
     y: number;
   } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [__, setClassNames] = useState<string[]>([]);
   const [inferenceTime, setInferenceTime] = useState<number>(0);
   const streamRef = useRef<MediaStream | null>(null);

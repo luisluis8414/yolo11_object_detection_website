@@ -17,8 +17,14 @@ const AVAILABLE_MODELS: ModelConfig[] = [
     imgsz: 640,
   },
   {
-    name: "COCO Detection",
+    name: "COCO Detection n",
     modelPath: "/models/yolo11n.onnx",
+    classesPath: "/classes/coco80.names.json",
+    imgsz: 640,
+  },
+  {
+    name: "COCO Detection m",
+    modelPath: "/models/yolo11m.onnx",
     classesPath: "/classes/coco80.names.json",
     imgsz: 640,
   },
@@ -26,9 +32,11 @@ const AVAILABLE_MODELS: ModelConfig[] = [
 
 function App() {
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(
-    AVAILABLE_MODELS[0]
+    AVAILABLE_MODELS[2]
   );
-  const [selectedCamera, setSelectedCamera] = useState<CameraDevice | null>(null);
+  const [selectedCamera, setSelectedCamera] = useState<CameraDevice | null>(
+    null
+  );
 
   return (
     <div
@@ -43,10 +51,14 @@ function App() {
         boxSizing: "border-box",
       }}
     >
-      <h1 style={{ textAlign: "center" }}>
-        YOLOv11n ONNX Inference
-      </h1>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <h1 style={{ textAlign: "center" }}>YOLOv11n ONNX Inference</h1>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
         <ModelSelector
           models={AVAILABLE_MODELS}
           selectedModel={selectedModel}
@@ -57,10 +69,7 @@ function App() {
           onDeviceSelect={setSelectedCamera}
         />
       </div>
-      <YoloWebcam
-        modelConfig={selectedModel}
-        selectedCamera={selectedCamera}
-      />
+      <YoloWebcam modelConfig={selectedModel} selectedCamera={selectedCamera} />
     </div>
   );
 }

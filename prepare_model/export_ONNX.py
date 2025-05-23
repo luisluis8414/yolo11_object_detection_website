@@ -1,7 +1,7 @@
 from ultralytics import YOLO
 
 # Load your pretrained model (yolo11n.pt is already trained)
-model = YOLO("yolo11x.pt")
+model = YOLO("best.pt")
 
 # Export to ONNX **with** built-in NMS + simplified graph + dynamic axes
 model.export(

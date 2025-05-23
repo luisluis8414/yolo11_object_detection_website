@@ -5,6 +5,12 @@ import CameraSelector, { type CameraDevice } from "./components/CameraSelector";
 
 const AVAILABLE_MODELS: ModelConfig[] = [
   {
+    name: "COCO Detection n",
+    modelPath: "/models/yolo11n.onnx",
+    classesPath: "/classes/coco80.names.json",
+    imgsz: 640,
+  },
+  {
     name: "Fruit Detection Model N",
     modelPath: "/models/fruits/fruits.n.onnx",
     classesPath: "/classes/fruits.json",
@@ -17,22 +23,16 @@ const AVAILABLE_MODELS: ModelConfig[] = [
     imgsz: 640,
   },
   {
-    name: "COCO Detection n",
-    modelPath: "/models/yolo11n.onnx",
-    classesPath: "/classes/coco80.names.json",
-    imgsz: 640,
-  },
-  {
-    name: "COCO Detection m",
-    modelPath: "/models/yolo11m.onnx",
-    classesPath: "/classes/coco80.names.json",
+    name: "No pretrain - Fruit Detection Model N",
+    modelPath: "/models/fruits/fruits_no_pretraining_n.onnx",
+    classesPath: "/classes/fruits.json",
     imgsz: 640,
   },
 ];
 
 function App() {
   const [selectedModel, setSelectedModel] = useState<ModelConfig>(
-    AVAILABLE_MODELS[2]
+    AVAILABLE_MODELS[0]
   );
   const [selectedCamera, setSelectedCamera] = useState<CameraDevice | null>(
     null

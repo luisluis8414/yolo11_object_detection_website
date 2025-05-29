@@ -51,7 +51,14 @@ function App() {
         boxSizing: "border-box",
       }}
     >
-      <h1 style={{ textAlign: "center" }}>YOLOv11n ONNX Inference</h1>
+      <h1 style={{ textAlign: "center", marginBlock: 4 }}>
+        Real-Time Object Detection with YOLOv11n in Your Browser
+      </h1>
+      <p style={{ textAlign: "center", maxWidth: "600px" }}>
+        This demo runs YOLOv11n ONNX models directly in your browser using your
+        webcam, with no server-side processing.
+      </p>
+
       <div
         style={{
           display: "flex",

@@ -1,31 +1,85 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <title>Real-Time Object Detection with YOLOv11n (ONNX)</title>
+    <title>YOLOv11n Demo – Real-Time Object Detection in Browser</title>
 
-    <meta name="description" content="Real-time object detection in browser using YOLOv11n ONNX model and a live video feed. Optimized for speed and accuracy." />
-    <meta name="keywords" content="YOLO, YOLOv11n, ONNX, object detection, real-time AI, computer vision, camera, browser, inference" />
+    <meta
+      name="description"
+      content="Live object detection in your browser using the YOLOv11n ONNX model and your camera. Fast, accurate, and privacy-respecting."
+    />
+    <meta
+      name="keywords"
+      content="YOLO, YOLOv11n, object detection demo, real-time AI, ONNX, computer vision, browser AI, webcam inference"
+    />
     <meta name="author" content="Your Name or Organization" />
+    <meta name="robots" content="index, follow" />
 
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    
-    <!-- Open Graph (for social sharing) -->
-    <meta property="og:title" content="YOLOv11n ONNX Object Detection in Browser" />
-    <meta property="og:description" content="A real-time camera-based object detection demo using YOLOv11n and ONNX in the browser." />
-    <meta property="og:image" content="https://object-detection-deep-learning-project.vercel.app/preview.png" />
-    <meta property="og:url" content="https://object-detection-deep-learning-project.vercel.app" />
+    <!-- Favicons -->
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/favicon/favicon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/favicon/favicon-16x16.png"
+    />
+    <link rel="apple-touch-icon" href="/favicon/apple-touch-icon.png" />
+    <link rel="manifest" href="/favicon/site.webmanifest" />
+    <link rel="shortcut icon" href="/favicon/favicon.ico" />
+
+    <!-- Open Graph -->
+    <meta
+      property="og:title"
+      content="YOLOv11n Demo – Real-Time Object Detection in Browser"
+    />
+    <meta
+      property="og:description"
+      content="A real-time webcam-based object detection demo using YOLOv11n and ONNX in the browser."
+    />
+    <meta
+      property="og:image"
+      content="https://object-detection-deep-learning-project.vercel.app/preview.png"
+    />
+    <meta
+      property="og:url"
+      content="https://object-detection-deep-learning-project.vercel.app"
+    />
     <meta property="og:type" content="website" />
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="YOLOv11n ONNX Object Detection" />
-    <meta name="twitter:description" content="Demo of real-time object detection using YOLOv11n ONNX model in the browser." />
-    <meta name="twitter:image" content="https://object-detection-deep-learning-project.vercel.app/preview.png" />
+    <meta name="twitter:title" content="YOLOv11n ONNX Object Detection Demo" />
+    <meta
+      name="twitter:description"
+      content="Try real-time object detection in your browser using YOLOv11n and ONNX."
+    />
+    <meta
+      name="twitter:image"
+      content="https://object-detection-deep-learning-project.vercel.app/preview.png"
+    />
 
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "YOLOv11n Browser Object Detection Demo",
+        "applicationCategory": "WebApplication",
+        "operatingSystem": "All",
+        "browserRequirements": "Requires JavaScript and Camera Access",
+        "description": "Try real-time object detection using the YOLOv11n ONNX model in your browser.",
+        "url": "https://object-detection-deep-learning-project.vercel.app",
+        "image": "https://object-detection-deep-learning-project.vercel.app/preview.png"
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
